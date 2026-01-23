@@ -1,0 +1,59 @@
+##----------------------------------------------------------------------------------
+## <copyright file="makefile.trs" company="Siemens Healthcare GmbH">
+##   Copyright (C) Siemens AG, 1998-2015. All Rights Reserved. Confidential.
+##   Copyright (C) Siemens Healthcare GmbH, 2015. All Rights Reserved. Confidential.
+## </copyright>
+##----------------------------------------------------------------------------------
+
+IF_WIN(DEBUGGER_CMD("$(OutDir)/SeqTestFrame.exe" "-s $(TargetPath)"))
+
+##-----------------------------------------------------------------------------
+## local compiler flags
+##
+CPPFLAGS(-D_CONSOLE)
+CPPFLAGS(-DBUILD_SEQU)
+CPPFLAGS(-DSEQUENCE_CLASS_CSI_FID)
+CPPFLAGS(-DSEQ_NAMESPACE=CSI_FID)
+
+## CPPFLAGS(-DMR_ALL_WARNINGS)
+
+VS_ADD_GROUP_ITEMS(Config, /Config/MriProduct/Exam/ParameterCards/SequenceSpecific, cf_csiRosette_TempInt_ParameterCardConfiguration.xml)
+
+##-----------------------------------------------------------------------------
+## include paths
+##
+
+##-----------------------------------------------------------------------------
+## source files
+##
+CPPSOURCES(csi_fid)
+CPPSOURCES(csi_fid_UI)
+
+##-----------------------------------------------------------------------------
+## local linker flags
+##
+
+##-----------------------------------------------------------------------------
+## link libraries
+##
+IF_WIN(LDLIBS(libUILink))
+LDLIBS(MeasNucleiBase)
+LDLIBS(MeasNucleiIF)
+LDLIBS(MrGenericDC)
+LDLIBS(MrProt)
+LDLIBS(MrTrace)
+LDLIBS(Reflection)
+LDLIBS(SpecSeq)
+LDLIBS(SpecUtils_EGA)
+LDLIBS(UTrace)
+LDLIBS(libSBBFW)
+LDLIBS(libSeqSysProp)
+LDLIBS(libSeqUTIF)
+LDLIBS(libSeqUtil)
+LDLIBS(libSpecSBB)
+
+##-----------------------------------------------------------------------------
+## target name
+##
+SIEMENSSEQLIB(cf_csiRosette_TempInt)
+IF_WIN(VS_STARTUP_PROJECT(csi_fid))
