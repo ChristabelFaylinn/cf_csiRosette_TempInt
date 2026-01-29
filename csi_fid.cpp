@@ -137,7 +137,7 @@ NLSStatus Csi_fid::initialize(SeqLim& rSeqLim)
     rSeqLim.setMinSliceResolution(0.5); // why?
 
     // Bandwidth used for data acquisition
-    rSeqLim.setBandWidth(0, 3030, 3030, 100, 3030); // CF bw of acquisition ??
+    rSeqLim.setBandWidth(0, 4200, 4200, 100, 4200); // CF bw of acquisition ??
 
     // Echo Time
     rSeqLim.setTE(0, 1400, 300000, 10, 15000);
@@ -463,12 +463,73 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
     // m_adc1.getMDH().setPostCutOff(0);
 
     int Nx = rMrProt.kSpace().baseResolution();
-        int ADCdwell;
+    int ADCdwell=10000;
+    // Initialize some values:
+    double sw = rMrProt.bandWidth(rSeqLim.getReadoutOSFactor())[0]
+                / n_ti; // CF This is hardcoded in the "initialize" section to be 2500 Hz.
+    double fov = rMrProt.sliceSeries()[0].readoutFOV(); // Get the FOV
+    double Y   = 42.577E6;                              // Gamma in Hz/T
+    // long n_ti = 1;  //  Number of temporal interleaves (Fixed to 1 and not used.  For future use);
+    double delta_t         = 0.00001; // gradient raster time in seconds.  0.00001 sec = 10 microsec
+    long   loops_per_block = 85;      // Number of loops around a rosette petal (i.e. FID points) per ADC/rosette block.
+    long   spectral_points = 765;     // Total number of loops (i.e. FID points) in all ADC/rosette blocks together.
+    long   grad_sample_points;        // Total number of gradient sample points in a single ADC/rosette block bl
+
+    // Calculated parameters
+    double w        = M_PI * sw;                         // Rosette frequency omega (w = w1 = w2).
+    double Nsh      = ceil((M_PI * Nx) / 2);             // Number of rosette petals (shots) Nsh.
+    int    n_blocks = spectral_points / loops_per_block; // Number of ADC blocks to stitch together.
+    double kmax     = Nx * 1000.0 / (2.0 * fov);         // kmax in [m^-1]
+    // double delta_t_spectral = 1/sw; // NOT USED.
+
+    // Rounding values of grad_sample_points
+    // grad_sample_points=loops_per_block*ceil(M_PI/(w*delta_t));
+    // grad_sample_points= ceil(grad_sample_points);
+    grad_sample_points = 3995; // number of grad sample points is hard-coded for now.  Uncomment two above lines to
+                               // calculate dynamically.
+
+    double points_per_loop
+        = (1 / static_cast<double>(sw))
+          / (static_cast<double>(ADCdwell)
+             / 2e9); // Number of ADC points per rosette loop: // CF ISNT THIS SUPPOSED TO JUST BE /1e9???
+    // double dt_adc_max = (1/(static_cast<double>(sw)*(1+(M_PI*static_cast<double>(Nx)/2))));  //The max value of
+    // dt_adc.  NOT USED.
+
+    // CF  delay_3 to ensure that it is a multiple of 10ns
+
+    dummy_delay_3 = M_PI * 1000000 / (n_ti * w);
+
+    if ((dummy_delay_3 % 10) != 0)
+    {
+        std::cout << "Our original dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
+        float w_f
+            = (M_PI * loops_per_block
+               / (delta_t * grad_sample_points)); // new w to accomodate rounded grad_sample_points values
+        std::cout << "Our dummy value for w is: " << w << std::endl;
+        std::cout << "Our dummy value for w_f is: " << w_f << std::endl;
+        float alpha_here = w_f / w; // our scaling factor which we need to keep, CF when rounding happened in between
+        std::cout << "Our dummy value for alpha is: " << alpha_here << std::endl;
+        dummy_delay_3 = (10 - ((dummy_delay_3) % 10)) + dummy_delay_3; // Round our delay_3 to a multiple of 10
+        std::cout << "Our new dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
+        w_f = (M_PI * 1000000) / (n_ti * dummy_delay_3); // redefine w_f to accomodate rounded delay_3 value
+        w   = w_f / alpha_here;                          // Return w with the conversion factor
+        std::cout << "Our rounded w is: " << w << std::endl;
+        grad_sample_points = loops_per_block * ceil(M_PI / (w * delta_t));
+        grad_sample_points = ceil(grad_sample_points);
+        points_per_loop    = (grad_sample_points / spectral_points) * 10; // check if it divi
+    }
+
+    // Recalculate omega (w) and sw based on above
+    w  = M_PI * loops_per_block / (delta_t * grad_sample_points);
+    sw = w / M_PI;
+
+ /*   int Nx = rMrProt.kSpace().baseResolution();
+        int ADCdwell;*/
         for(int m=0;m<9;m++)
         	{   //if(Nx==64)
         //    { 
                 ADCdwell=10000;
-                m_adc1[m].prep (4026, static_cast<int32_t>(ADCdwell)); // CF change 4026 to generalize with n_ti and sw
+                m_adc1[m].prep (grad_sample_points, static_cast<int32_t>(ADCdwell)); // CF change 4026 to generalize with n_ti and sw
         //    }
         //else if(Nx==48)
         //      {  
@@ -718,56 +779,56 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
     // Prepare Rosette gradients
     // PARAMETERS FOR ROSETTE GRADIENTS
 
-    //Initialize some values:
-		double sw = rMrProt.bandWidth(rSeqLim.getReadoutOSFactor())[0] / n_ti;  // CF This is hardcoded in the "initialize" section to be 2500 Hz.
-		double fov = rMrProt.sliceSeries()[0].readoutFOV();  //Get the FOV
-		double Y = 42.577E6; // Gamma in Hz/T
-		// long n_ti = 1;  //  Number of temporal interleaves (Fixed to 1 and not used.  For future use);
-		double delta_t = 0.00001; // gradient raster time in seconds.  0.00001 sec = 10 microsec 
-		long loops_per_block = 61;  //Number of loops around a rosette petal (i.e. FID points) per ADC/rosette block.
-        long spectral_points = 549;  //Total number of loops (i.e. FID points) in all ADC/rosette blocks together.
-		long grad_sample_points;  //Total number of gradient sample points in a single ADC/rosette block bl
-		
-		// Calculated parameters
-		double w = M_PI*sw;  //Rosette frequency omega (w = w1 = w2).
-		double Nsh =  ceil((M_PI*Nx)/2);  //Number of rosette petals (shots) Nsh.
-		int n_blocks = spectral_points/loops_per_block;  //Number of ADC blocks to stitch together.
-		double kmax = Nx*1000.0/(2.0*fov); //kmax in [m^-1]
-		// double delta_t_spectral = 1/sw; // NOT USED.
-        
-		// Rounding values of grad_sample_points 
-        //grad_sample_points=loops_per_block*ceil(M_PI/(w*delta_t));
-		//grad_sample_points= ceil(grad_sample_points);
-        grad_sample_points = 4026;  //number of grad sample points is hard-coded for now.  Uncomment two above lines to calculate dynamically. 
+  //  //Initialize some values:
+		//double sw = rMrProt.bandWidth(rSeqLim.getReadoutOSFactor())[0] / n_ti;  // CF This is hardcoded in the "initialize" section to be 2500 Hz.
+		//double fov = rMrProt.sliceSeries()[0].readoutFOV();  //Get the FOV
+		//double Y = 42.577E6; // Gamma in Hz/T
+		//// long n_ti = 1;  //  Number of temporal interleaves (Fixed to 1 and not used.  For future use);
+		//double delta_t = 0.00001; // gradient raster time in seconds.  0.00001 sec = 10 microsec 
+		//long loops_per_block = 85;  //Number of loops around a rosette petal (i.e. FID points) per ADC/rosette block.
+  //      long spectral_points = 765;  //Total number of loops (i.e. FID points) in all ADC/rosette blocks together.
+		//long grad_sample_points;  //Total number of gradient sample points in a single ADC/rosette block bl
+		//
+		//// Calculated parameters
+		//double w = M_PI*sw;  //Rosette frequency omega (w = w1 = w2).
+		//double Nsh =  ceil((M_PI*Nx)/2);  //Number of rosette petals (shots) Nsh.
+		//int n_blocks = spectral_points/loops_per_block;  //Number of ADC blocks to stitch together.
+		//double kmax = Nx*1000.0/(2.0*fov); //kmax in [m^-1]
+		//// double delta_t_spectral = 1/sw; // NOT USED.
+  //      
+		//// Rounding values of grad_sample_points 
+  //      //grad_sample_points=loops_per_block*ceil(M_PI/(w*delta_t));
+		////grad_sample_points= ceil(grad_sample_points);
+  //      grad_sample_points = 3995;  //number of grad sample points is hard-coded for now.  Uncomment two above lines to calculate dynamically. 
 
-		double points_per_loop = (1/static_cast<double>(sw))/(static_cast<double>(ADCdwell)/2e9);  //Number of ADC points per rosette loop: // CF ISNT THIS SUPPOSED TO JUST BE /1e9???
-		// double dt_adc_max = (1/(static_cast<double>(sw)*(1+(M_PI*static_cast<double>(Nx)/2))));  //The max value of dt_adc.  NOT USED.
+		//double points_per_loop = (1/static_cast<double>(sw))/(static_cast<double>(ADCdwell)/2e9);  //Number of ADC points per rosette loop: // CF ISNT THIS SUPPOSED TO JUST BE /1e9???
+		//// double dt_adc_max = (1/(static_cast<double>(sw)*(1+(M_PI*static_cast<double>(Nx)/2))));  //The max value of dt_adc.  NOT USED.
 
-        // CF  delay_3 to ensure that it is a multiple of 10ns
+  //      // CF  delay_3 to ensure that it is a multiple of 10ns
 
-        dummy_delay_3 = M_PI * 1000000 / (n_ti * w);
-        
-        if ((dummy_delay_3 % 10) != 0)
-        {
-            std::cout << "Our original dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
-            float w_f = (M_PI * loops_per_block / (delta_t * grad_sample_points)); // new w to accomodate rounded grad_sample_points values
-            std::cout << "Our dummy value for w is: " << w << std::endl;
-            std::cout << "Our dummy value for w_f is: " << w_f << std::endl;
-            float alpha_here = w_f / w; // our scaling factor which we need to keep, CF when rounding happened in between 
-            std::cout << "Our dummy value for alpha is: " << alpha_here << std::endl;
-            dummy_delay_3 = (10 - ((dummy_delay_3) % 10)) + dummy_delay_3; // Round our delay_3 to a multiple of 10
-            std::cout << "Our new dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
-            w_f = (M_PI * 1000000) / (n_ti * dummy_delay_3); // redefine w_f to accomodate rounded delay_3 value
-            w   = w_f / alpha_here;                          // Return w with the conversion factor
-            std::cout << "Our rounded w is: " << w << std::endl;
-            grad_sample_points = loops_per_block * ceil(M_PI / (w * delta_t));
-            grad_sample_points = ceil(grad_sample_points);
-            points_per_loop    = (grad_sample_points / spectral_points) * 10; // check if it divi
-        }
+  //      dummy_delay_3 = M_PI * 1000000 / (n_ti * w);
+  //      
+  //      if ((dummy_delay_3 % 10) != 0)
+  //      {
+  //          std::cout << "Our original dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
+  //          float w_f = (M_PI * loops_per_block / (delta_t * grad_sample_points)); // new w to accomodate rounded grad_sample_points values
+  //          std::cout << "Our dummy value for w is: " << w << std::endl;
+  //          std::cout << "Our dummy value for w_f is: " << w_f << std::endl;
+  //          float alpha_here = w_f / w; // our scaling factor which we need to keep, CF when rounding happened in between 
+  //          std::cout << "Our dummy value for alpha is: " << alpha_here << std::endl;
+  //          dummy_delay_3 = (10 - ((dummy_delay_3) % 10)) + dummy_delay_3; // Round our delay_3 to a multiple of 10
+  //          std::cout << "Our new dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
+  //          w_f = (M_PI * 1000000) / (n_ti * dummy_delay_3); // redefine w_f to accomodate rounded delay_3 value
+  //          w   = w_f / alpha_here;                          // Return w with the conversion factor
+  //          std::cout << "Our rounded w is: " << w << std::endl;
+  //          grad_sample_points = loops_per_block * ceil(M_PI / (w * delta_t));
+  //          grad_sample_points = ceil(grad_sample_points);
+  //          points_per_loop    = (grad_sample_points / spectral_points) * 10; // check if it divi
+  //      }
 
-        // Recalculate omega (w) and sw based on above
-        w  = M_PI * loops_per_block / (delta_t * grad_sample_points);
-        sw = w / M_PI;
+  //      // Recalculate omega (w) and sw based on above
+  //      w  = M_PI * loops_per_block / (delta_t * grad_sample_points);
+  //      sw = w / M_PI;
 
 		rMrProt.getData().getsWipMemBlock().getalFree() [0] = static_cast<uint32_t>(points_per_loop); //Make available in the MDH
 		rMrProt.getData().getsWipMemBlock().getalFree() [1] = static_cast<uint32_t>(ADCdwell); //Make available in the MDH
@@ -1794,8 +1855,8 @@ NLS_STATUS Csi_fid::runKernel(
     }
 
     // open this event block
-    long loops_per_block= 61; // CF to be changed later
-    long spectral_points= 549;
+    long loops_per_block= 85; // CF to be changed later
+    long spectral_points= 765;
     int n_blocks=spectral_points/loops_per_block;
     fRTEBInit(sNewRotationMatrix, true);
     // it is annoying that opening of an event block is always connected to
