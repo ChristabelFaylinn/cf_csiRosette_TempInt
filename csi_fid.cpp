@@ -1988,15 +1988,15 @@ NLS_STATUS Csi_fid::runKernel(
 	
     if (m_ISISalternator == 0)
     {
+        fRTEI(lT, 0, 0, 0, &m_RosGy_rampup, &m_RosGx_rampup, 0, 0);
+        cout << "Did not alternate." << endl;
+    }
+    else
+    {
         SEQ_TRACE_WARN.print("dalay_3: %ld", delay_3);
         SEQ_TRACE_WARN.print("HOHOHO");
         fRTEI(lT += dummy_delay_3, 0, 0, 0, &m_RosGy_rampup, &m_RosGx_rampup, 0, 0);
         cout << "Alternated!" << endl;
-    }
-    else
-    {
-        fRTEI(lT                                ,            0,           0,         0,  &m_RosGy_rampup,     &m_RosGx_rampup, 0 , 0);
-        cout << "Did not alternate." << endl;
     }
     
     for(int m=0;m<9;m++)
