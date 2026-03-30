@@ -497,31 +497,39 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
 
     // CF  delay_3 to ensure that it is a multiple of 10ns
 
+    SEQ_TRACE_WARN.print("sw before rounding: %d", loops_per_block / (delta_t * grad_sample_points ));
+
+    w     = (M_PI * loops_per_block / (delta_t * grad_sample_points));
     dummy_delay_3 = M_PI * 1000000 / (n_ti * w);
 
     if ((dummy_delay_3 % 10) != 0)
     {
         std::cout << "Our original dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
-        float w_f
+       /* float w_f
             = (M_PI * loops_per_block
-               / (delta_t * grad_sample_points)); // new w to accomodate rounded grad_sample_points values
-        std::cout << "Our dummy value for w is: " << w << std::endl;
-        std::cout << "Our dummy value for w_f is: " << w_f << std::endl;
-        float alpha_here = w_f / w; // our scaling factor which we need to keep, CF when rounding happened in between
-        std::cout << "Our dummy value for alpha is: " << alpha_here << std::endl;
+               / (delta_t * grad_sample_points));*/ // new w to accomodate rounded grad_sample_points values
+        //std::cout << "Our dummy value for w is: " << w << std::endl;
+        //std::cout << "Our dummy value for w_f is: " << w_f << std::endl;
+        //float alpha_here = w_f / w; // our scaling factor which we need to keep, CF when rounding happened in between
+        //std::cout << "Our dummy value for alpha is: " << alpha_here << std::endl;
         dummy_delay_3 = (10 - ((dummy_delay_3) % 10)) + dummy_delay_3; // Round our delay_3 to a multiple of 10
-        std::cout << "Our new dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
-        w_f = (M_PI * 1000000) / (n_ti * dummy_delay_3); // redefine w_f to accomodate rounded delay_3 value
-        w   = w_f / alpha_here;                          // Return w with the conversion factor
+        //std::cout << "Our new dummy value for delay_3 is: " << dummy_delay_3 << std::endl;
+        w = (M_PI * 1000000) / (n_ti * dummy_delay_3); // redefine w_f to accomodate rounded delay_3 value
+        //w   = w_f / alpha_here;                          // Return w with the conversion factor
         std::cout << "Our rounded w is: " << w << std::endl;
         grad_sample_points = loops_per_block * ceil(M_PI / (w * delta_t));
         grad_sample_points = ceil(grad_sample_points);
         points_per_loop    = (grad_sample_points / spectral_points) * 10; // check if it divi
     }
 
+   
+
     // Recalculate omega (w) and sw based on above
     w  = M_PI * loops_per_block / (delta_t * grad_sample_points);
     sw = w / M_PI;
+
+    SEQ_TRACE_WARN.print("grad_sample_points after rounding: %d", grad_sample_points);
+    SEQ_TRACE_WARN.print("sw after rounding: %d", sw);
 
  /*   int Nx = rMrProt.kSpace().baseResolution();
         int ADCdwell;*/
