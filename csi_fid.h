@@ -22,6 +22,7 @@
 #include "MrProtSrv/Domain/MrProtData/MrProt/SeqIF/SeqExpo.h"
 #include "MrSpecAcq/SpecSeq/SpecSeq.h"
 #include "MrSpecAcq/libSpecSBB/SBBWatSup.h"
+#include "MrImagingFW/WIPParameterTool/WIPParameterTool.h"
 
 #include <array>
 #include <vector>
@@ -39,10 +40,18 @@ namespace SEQ_NAMESPACE
 {
 class Csi_fidUI;
 
+enum WIPParamPositions
+{
+    WIP_PulseType = 0,
+};
+
+static const char* sOption1 = "3 Sinc";
+static const char* sOption2 = "3 Asym";
+
 class __IMP_EXP Csi_fid : public SpecSeq
 {
   public:
-    Csi_fid() = default;
+    Csi_fid();
     virtual ~Csi_fid();
 
     Csi_fid(const Csi_fid& right) = delete;
@@ -151,6 +160,8 @@ class __IMP_EXP Csi_fid : public SpecSeq
     sGRAD_PULSE m_encod_ph{"encod_ph"};
     sGRAD_PULSE m_encod_ro{"encod_ro"};
 
+    sGRAD_PULSE m_short_encod_sl{"short_encod_sl"};
+
     // ------------------------------------------------------------------------------
     /// TE fill time in us
     // ------------------------------------------------------------------------------
@@ -208,8 +219,13 @@ class __IMP_EXP Csi_fid : public SpecSeq
     long m_lTRFill{0};
     long m_ISISalternator{1};
 
+    // for WIPParameter
+    long PulseType{0};
+
     // SBBs
     SeqBuildBlockWatSup m_sWaterSat{nullptr};
+
+    WPT_NAMESPACE::WIPParameterTool m_WIPParamTool;
 
 #ifdef WIN32
     Csi_fidUI* m_pUI{nullptr};

@@ -22,6 +22,8 @@
 #include "MrSpecAcq/SpecUtils/EGA/SpecUtils.h"
 #include "MrSpecAcq/cf_csiRosette_TempInt/csi_fid_UI.h"
 
+#include "MrImagingFW/WIPParameterTool/WIPParameterTool.h"
+
 // ------------------------------------------------------------------------------ 
 // WIP MEM BLOCK includes                                                           
 // ------------------------------------------------------------------------------ 
@@ -40,6 +42,7 @@ SEQIF_DEFINE(SEQ_NAMESPACE::Csi_fid)
 #endif
 
 using namespace SEQ_NAMESPACE;
+//using namespace WPT_NAMESPACE;
 
 // Defining Global Variables
 static sROT_MATRIX sNewRotationMatrix, sExistingMatrix;
@@ -52,11 +55,6 @@ static double dRotAngle;
 
 using namespace std;
 
-#pragma warning (push)
-#pragma warning(disable : 4355)
-
-#pragma warning(pop)
-
 Csi_fid::~Csi_fid()
 {
 #ifdef WIN32
@@ -67,6 +65,15 @@ Csi_fid::~Csi_fid()
     }
 #endif
 }
+
+#pragma warning(push)
+#pragma warning(disable : 4355)
+Csi_fid::Csi_fid() : m_WIPParamTool(*this)
+{
+}
+#pragma warning(pop)
+
+
 
 NLSStatus Csi_fid::initialize(SeqLim& rSeqLim)
 {
@@ -140,7 +147,7 @@ NLSStatus Csi_fid::initialize(SeqLim& rSeqLim)
     rSeqLim.setBandWidth(0, 4200, 4200, 100, 4200); // CF bw of acquisition ??
 
     // Echo Time
-    rSeqLim.setTE(0, 1400, 300000, 10, 15000);
+    rSeqLim.setTE(0, 100, 300000, 10, 15000);
 
     // Repetition Time
     rSeqLim.setTR(0, 200000, 30000000, 10000, 1500000);
@@ -229,6 +236,12 @@ NLSStatus Csi_fid::initialize(SeqLim& rSeqLim)
     // default adjust procedures
     rSeqLim.setAdjWatSup(SEQ::ENABLE, SEQ::DISABLE);
 
+    // WIP parameter CF 
+    m_WIPParamTool.createSelectionParameter(WIP_PulseType, 0, rSeqLim, "Pulse Type");
+
+    m_WIPParamTool.addDefaultOption(WIP_PulseType, sOption1, 0); // 3 Sinc
+    m_WIPParamTool.addOption(WIP_PulseType, sOption2, 1);        // 3 asym
+
     // new with VA21A
     rSeqLim.setSliceSelectDeltaFrequency(-10.0, 10.0, 0.1, 0.0); // suitable range for X-nuclei
 
@@ -289,6 +302,13 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
         rMrProt.getsSpecPara().getsVoI().setdThickness(
             rMrProt.sliceSeries()[0].thickness()); // VoiSizeSlice = SliceThickness
     }
+
+    // Get variables from WIPParameter
+
+    if (!m_WIPParamTool.prepare(rMrProt, rSeqLim))
+        return MRI_SEQ_SEQU_SEQ_NOT_PREPARED;
+    
+     //PulseType = rMrProt.wipMemBlock().getalFree()[0];
 
     // Get the current nucleus from the protocol
     MeasNucleus  mainNucleus(rMrProt.getsTXSPEC().getasNucleusInfo()[0].gettNucleus().c_str());
@@ -838,8 +858,8 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
   //      w  = M_PI * loops_per_block / (delta_t * grad_sample_points);
   //      sw = w / M_PI;
 
-		rMrProt.getData().getsWipMemBlock().getalFree() [0] = static_cast<uint32_t>(points_per_loop); //Make available in the MDH
-		rMrProt.getData().getsWipMemBlock().getalFree() [1] = static_cast<uint32_t>(ADCdwell); //Make available in the MDH
+		// rMrProt.getData().getsWipMemBlock().getalFree() [0] = static_cast<uint32_t>(points_per_loop); //Make available in the MDH
+		// rMrProt.getData().getsWipMemBlock().getalFree() [1] = static_cast<uint32_t>(ADCdwell); //Make available in the MDH
 		
 		 cout<<"The value of Nx is: "<<Nx<<endl;
 		 cout<<"The value of Nsh is: "<<Nsh<<endl;
@@ -1120,6 +1140,16 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
         || !(m_encod_sl.check()))
         return m_encod_sl.getNLSStatus();
 
+    SEQ_TRACE_WARN.print("m_encod_sl: %f", m_encod_sl.getMomentum(0, m_encod_sl.getTotalTime()));
+    SEQ_TRACE_WARN.print("m_grad_exc: %f", m_grad_exc.getMomentum(0, m_grad_exc.getTotalTime()));
+
+    if (!m_short_encod_sl.prepSymmetricTOTShortestTime(m_encod_sl.getMomentum(0, m_encod_sl.getTotalTime())))
+        return m_short_encod_sl.getNLSStatus();
+
+    SEQ_TRACE_WARN.print("m_short_encod_sl: %f", m_short_encod_sl.getMomentum(0, m_short_encod_sl.getTotalTime()));
+    SEQ_TRACE_WARN.print("m_short_encod_sl duration: %d", m_short_encod_sl.getTotalTime());
+    SEQ_TRACE_WARN.print("m_encod_sl duration: %d", m_encod_sl.getTotalTime());
+
     // if (!(m_encod_ro.prepAmplitude(m_d_1st_csi_grad_offset + m_sh_1st_csi_addr[0] * m_d_1st_csi_grad_step))
     //     || !(m_encod_ro.check()))
     //     return m_encod_ro.getNLSStatus();
@@ -1137,9 +1167,9 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
 	cout<<"The amplitude of ramp up gradient is"<<m_RosGx_rampup.getAmplitude()<<endl;
 	cout<<"The max magnitude of ramp up gradient "<<m_RosGx_rampup.getMaxMagnitude()<<endl;
 
-    m_RosGx_Prephase.setRampUpTime( m_encod_sl.getRampUpTime());
-    m_RosGx_Prephase.setRampDownTime( m_encod_sl.getRampDownTime());
-    m_RosGx_Prephase.setDuration( m_encod_sl.getDuration()); 
+    m_RosGx_Prephase.setRampUpTime( m_short_encod_sl.getRampUpTime());
+    m_RosGx_Prephase.setRampDownTime( m_short_encod_sl.getRampDownTime());
+    m_RosGx_Prephase.setDuration( m_short_encod_sl.getDuration()); 
     m_RosGx_Prephase.setAmplitude(-PrephaseMoment_x/m_RosGx_Prephase.getDuration());
 
     if( !m_RosGx_Prephase.prep() )  {
@@ -1152,9 +1182,9 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
 
         double PrephaseMoment_y = 0.5*m_RosGy_rampup.getTotalTime()*0*m_RosGy_rampup.getAmplitude();
 	
-        m_RosGy_Prephase.setRampUpTime( m_encod_sl.getRampUpTime());
-        m_RosGy_Prephase.setRampDownTime( m_encod_sl.getRampDownTime());
-        m_RosGy_Prephase.setDuration( m_encod_sl.getDuration()); 
+        m_RosGy_Prephase.setRampUpTime( m_short_encod_sl.getRampUpTime());
+        m_RosGy_Prephase.setRampDownTime( m_short_encod_sl.getRampDownTime());
+        m_RosGy_Prephase.setDuration( m_short_encod_sl.getDuration()); 
         m_RosGy_Prephase.setAmplitude(-PrephaseMoment_y/m_RosGy_Prephase.getDuration());
    
         if( !m_RosGy_Prephase.prep() )  {
@@ -1216,8 +1246,14 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
       // Calculate TEFill-times and check, whether timing can be realized
       // --------------------------------------------------------------------
      //lb template for delays: m_lTEFill_us =rMrProt.te()[0] - static_cast<long>(m_rf_exc.getDuration() *(1- m_rf_exc.getAsymmetry())) - m_encod_sl.getDuration()- m_encod_sl.getRampDownTime()- static_cast<long>(m_RosGx_rampup.getTotalTime())- static_cast<long>(m_grad_exc.getRampDownTime());
-     m_lTEFill_us =rMrProt.te()[0] - static_cast<long>(m_rf_exc.getDuration() *(1- m_rf_exc.getAsymmetry())) - m_encod_sl.getDuration()- m_encod_sl.getRampDownTime()- static_cast<long>(m_RosGx_rampup.getTotalTime())- static_cast<long>(m_grad_exc.getRampDownTime());
+     m_lTEFill_us =rMrProt.te()[0] - static_cast<long>(m_rf_exc.getDuration() *(1- m_rf_exc.getAsymmetry())) - m_short_encod_sl.getDuration()- m_short_encod_sl.getRampDownTime()- static_cast<long>(m_RosGx_rampup.getTotalTime())- static_cast<long>(m_grad_exc.getRampDownTime());
 
+     SEQ_TRACE_WARN.print("m_lTEFill_us: %ld", m_lTEFill_us);
+     SEQ_TRACE_WARN.print("half of rf, %f", m_rf_exc.getDuration() * (1 - m_rf_exc.getAsymmetry()));
+     SEQ_TRACE_WARN.print("m_short_encod_sl.getDuration(): %ld", m_short_encod_sl.getDuration());
+     SEQ_TRACE_WARN.print("m_short_encod_sl.getRampDownTime(): %ld", m_short_encod_sl.getRampDownTime());
+     SEQ_TRACE_WARN.print("m_RosGx_rampup.getTotalTime(): %ld", m_RosGx_rampup.getTotalTime());
+     SEQ_TRACE_WARN.print("m_grad_exc.getRampDownTime(): %ld", m_grad_exc.getRampDownTime());
     // std::cout<<"m_rf_exc.getDuration() *(1- m_rf_exc.getAsymmetry())"<<static_cast<long>(m_rf_exc.getDuration() *(1- m_rf_exc.getAsymmetry()))<<std::endl;
     // std::cout<<"m_encod_sl.getDuration()"<<m_encod_sl.getDuration()<<std::endl;
     // std::cout<<"m_encod_sl.getRampDownTime()"<<m_encod_sl.getRampDownTime()<<std::endl;
@@ -1370,7 +1406,7 @@ NLSStatus Csi_fid::prepare(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
 
     // checking of sequence & output of MRI_SEQ_SEQU_ERROR to actuate solve handler
     // VecSizeTRConflict & BandWidthTRConflict
-    m_lTRNeededSpectro = n_blocks*m_adc1[0].getRoundedDuration() + lSBBDuration + lFinalSpoilDuration + m_grad_exc.getTotalTime() + m_encod_sl.getTotalTime()
+    m_lTRNeededSpectro = n_blocks*m_adc1[0].getRoundedDuration() + lSBBDuration + lFinalSpoilDuration + m_grad_exc.getTotalTime() + m_short_encod_sl.getTotalTime()
                          /*+ m_sp1_sl.getTotalTime() + m_grad_ref.getTotalTime()*/ + m_RosGx_rampup.getTotalTime() + noe_dur + 1000;
 
     if (m_lTRNeededSpectro > rMrProt.tr()[0])
@@ -1434,9 +1470,9 @@ NLSStatus Csi_fid::check(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo, SE
     NLS_STATUS lStatus = MRI_SEQ_SEQU_NORMAL;
 
     // execute kernel for checking (GSWD look ahead functionality)
-    if (!(m_encod_sl.prepAmplitude( m_asymAmp ))
-        || !(m_encod_sl.check()))
-        return m_encod_sl.getNLSStatus();
+    if (!(m_short_encod_sl.prepAmplitude( m_asymAmp*m_encod_sl.getDuration() / m_short_encod_sl.getDuration() ))
+        || !(m_short_encod_sl.check()))
+        return m_short_encod_sl.getNLSStatus();
 
     // if (!(m_encod_ro.prepAmplitude(m_d_1st_csi_grad_offset + m_sh_1st_csi_addr[0] * m_d_1st_csi_grad_step))
     //     || !(m_encod_ro.check()))
@@ -1511,9 +1547,9 @@ NLSStatus Csi_fid::run(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
             // nave = rMrProt.averages();
             for (size_t i = 0; i < static_cast<size_t>(Nsh); i++)
             {
-                if (!(m_encod_sl.prepAmplitude( m_asymAmp ))
-                    || !(m_encod_sl.check()))
-                    return m_encod_sl.getNLSStatus();
+                if (!(m_short_encod_sl.prepAmplitude(m_asymAmp * m_encod_sl.getDuration() / m_short_encod_sl.getDuration()))
+                    || !(m_short_encod_sl.check()))
+                    return m_short_encod_sl.getNLSStatus();
 
                 // if (!(m_encod_ro.prepAmplitude(m_d_1st_csi_grad_offset + m_sh_1st_csi_addr[i] * m_d_1st_csi_grad_step))
                 //     || !(m_encod_ro.check()))
@@ -1664,8 +1700,8 @@ NLSStatus Csi_fid::run(MrProt& rMrProt, SeqLim& rSeqLim, SeqExpo& rSeqExpo)
         {
             for (long j = 0; j < rMrProt.averages(); j++) // averages
             {
-                if (!(m_encod_sl.prepAmplitude(m_asymAmp)) || !(m_encod_sl.check()))
-                    return m_encod_sl.getNLSStatus();
+                if (!(m_short_encod_sl.prepAmplitude(m_asymAmp*m_encod_sl.getDuration() / m_short_encod_sl.getDuration())) || !(m_short_encod_sl.check()))
+                    return m_short_encod_sl.getNLSStatus();
 
                 for (size_t i = 0; i < static_cast<size_t>(Nsh); i++) // PE steps
                 {
@@ -1929,11 +1965,11 @@ NLS_STATUS Csi_fid::runKernel(
 
     // first spoiler with phase encoding balanced
     fRTEI(lT += m_rf_exc.getDuration(), &m_ph_n_exc, 0, /*A*/ 0, 0, 0, 0, 0);
-    fRTEI(lT+= m_grad_exc.getRampDownTime(), 0,0,/*A*/0,&m_RosGy_Prephase, &m_RosGx_Prephase,&m_encod_sl,0);
+    fRTEI(lT+= m_grad_exc.getRampDownTime(), 0,0,/*A*/0,&m_RosGy_Prephase, &m_RosGx_Prephase,&m_short_encod_sl,0);
    	//lT+=m_grad_exc.getRampDownTime() + delay_1;
     // fRTEI(lT+=delay_1, 0,0,/*A*/0,&m_sp1_ph,&m_sp1_ro,&m_sp1_sl,0);
     // lT+=m_sp1_sl.getDuration() + m_sp1_sl.getRampDownTime();
-    lT += (m_encod_sl.getTotalTime()+ m_lTEFill_us);
+    lT += (m_short_encod_sl.getTotalTime()+ m_lTEFill_us);
 
 
 	// refocusing
@@ -1988,15 +2024,16 @@ NLS_STATUS Csi_fid::runKernel(
 	
     if (m_ISISalternator == 0)
     {
-        fRTEI(lT, 0, 0, 0, &m_RosGy_rampup, &m_RosGx_rampup, 0, 0);
-        cout << "Did not alternate." << endl;
-    }
-    else
-    {
         SEQ_TRACE_WARN.print("dalay_3: %ld", delay_3);
         SEQ_TRACE_WARN.print("HOHOHO");
         fRTEI(lT += dummy_delay_3, 0, 0, 0, &m_RosGy_rampup, &m_RosGx_rampup, 0, 0);
         cout << "Alternated!" << endl;
+        
+    }
+    else
+    {
+        fRTEI(lT, 0, 0, 0, &m_RosGy_rampup, &m_RosGx_rampup, 0, 0);
+        cout << "Did not alternate." << endl;
     }
     
     for(int m=0;m<9;m++)

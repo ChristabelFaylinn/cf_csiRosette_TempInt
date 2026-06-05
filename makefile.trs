@@ -14,6 +14,8 @@ CPPFLAGS(-D_CONSOLE)
 CPPFLAGS(-DBUILD_SEQU)
 CPPFLAGS(-DSEQUENCE_CLASS_CSI_FID)
 CPPFLAGS(-DSEQ_NAMESPACE=CSI_FID)
+CPPFLAGS(-DWPT_NAMESPACE=cf_csiRosette_TempInt_WPT)
+CPPFLAGS(-DBUILD_WIPParameterTool)
 
 ## CPPFLAGS(-DMR_ALL_WARNINGS)
 
@@ -28,6 +30,7 @@ VS_ADD_GROUP_ITEMS(Config, /Config/MriProduct/Exam/ParameterCards/SequenceSpecif
 ##
 CPPSOURCES(csi_fid)
 CPPSOURCES(csi_fid_UI)
+CPPSOURCESFROM(WIPParameterTool, ../../MrImagingFW/WIPParameterTool)
 
 ##-----------------------------------------------------------------------------
 ## local linker flags
@@ -51,6 +54,8 @@ LDLIBS(libSeqSysProp)
 LDLIBS(libSeqUTIF)
 LDLIBS(libSeqUtil)
 LDLIBS(libSpecSBB)
+LDLIBS (libUICtrl)
+LDLIBS (UTrace)
 
 ##-----------------------------------------------------------------------------
 ## target name
